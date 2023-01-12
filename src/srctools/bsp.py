@@ -242,6 +242,12 @@ class LUMP_DATA_LAYOUT:
     class V19(STANDARD):
         LEAF = '<ihh6h4Hh24s2x' # Version 0
     
+    class VITAMIN(STANDARD):
+        LEAF = '<ihh6I4HhBx'
+        FACE = '<5i4iB3x' 
+        BRUSHSIDE = '<IIhBB'
+        NODE = '<iii6iHHh2x'
+    
     # https://chaosinitiative.github.io/Wiki/docs/Reference/bsp-v25/
     class CHAOS(STANDARD):
         FACE = '<I??xx5i4sif5i3I'
@@ -1284,6 +1290,9 @@ class BSP:
             if self.version is VERSIONS.CHAOSSOURCE:
                 # Change the expected structure for lumps to fit chaos' increased limits
                 self.lump_layout = LUMP_DATA_LAYOUT.CHAOS
+            elif self.version is VERSIONS.VITAMINSOURCE:
+                # Change the expected structure for lumps to fit vitamin's rad new format
+                self.lump_layout = LUMP_DATA_LAYOUT.VITAMIN
             elif self.version <= 19:
                 self.lump_layout = LUMP_DATA_LAYOUT.V19
         
@@ -1807,7 +1816,7 @@ class BSP:
         hammer_id: Optional[int]
 
         for i, face_data in enumerate(struct.iter_unpack(
-            '<5i4iB3x' if self.is_vitamin else self.lump_layout.FACE,
+            self.lump_layout.FACE,
             data,
         )):
             if is_vitamin:
@@ -2011,7 +2020,7 @@ class BSP:
             sides = [
                 BrushSide(self.planes[plane_num], self.texinfo[texinfo], dispinfo, bevel, extra)
                 for (plane_num, texinfo, dispinfo, bevel, extra)
-                in struct.iter_unpack('<IIhBB', self.lumps[BSP_LUMPS.BRUSHSIDES].data)
+                in struct.iter_unpack(self.lump_layout.BRUSHSIDE, self.lumps[BSP_LUMPS.BRUSHSIDES].data)
             ]
         else:
             sides = [
@@ -2039,7 +2048,7 @@ class BSP:
 
         if self.is_vitamin:
             for side in sides:
-                side_struct = struct.Struct('<IIhBB')
+                side_struct = struct.Struct(self.lump_layout.BRUSHSIDE)
                 sides_buf.write(side_struct.pack(
                     add_plane(side.plane),
                     add_texinfo(side.texinfo),
@@ -2086,14 +2095,11 @@ class BSP:
         dist_to_water = read_array('<H', self.lumps[BSP_LUMPS.LEAFMINDISTTOWATER].data)
 
         is_vitamin = self.is_vitamin
-        if is_vitamin:
-            leaf_fmt = '<ihh6I4HhBx'
-            has_ambient = False
-        else:
-            leaf_fmt = self.lump_layout.LEAF
-            # Some extra ambient light data.
-            has_ambient = self.version <= 19
-                
+    
+        leaf_fmt = self.lump_layout.LEAF
+        # Some extra ambient light data.
+        has_ambient = not is_vitamin and self.version <= 19
+            
         for leaf_data, water_dist in zip(struct.iter_unpack(leaf_fmt, data), dist_to_water):
             if is_vitamin:
                 # VitaminSource moves the flags into its own block.
@@ -2152,7 +2158,7 @@ class BSP:
             max_x, max_y, max_z,
             first_face, face_count, area_ind,
         ) in struct.iter_unpack(
-            '<iii6iHHh2x' if self.is_vitamin else self.lump_layout.NODE,
+            self.lump_layout.NODE,
             data,
         ):
             nodes.append((VisTree(
@@ -2195,7 +2201,7 @@ class BSP:
                 neg_ind = add_node(node.child_neg)
 
             buf.write(struct.pack(
-                '<iii6iHHh2x' if self.is_vitamin else self.lump_layout.NODE,
+                self.lump_layout.NODE,
                 add_plane(node.plane), neg_ind, pos_ind,
                 int(node.mins.x), int(node.mins.y), int(node.mins.z),
                 int(node.maxes.x), int(node.maxes.y), int(node.maxes.z),
@@ -2229,7 +2235,7 @@ class BSP:
 
             if is_vitamin:
                 buf.write(struct.pack(
-                    '<ihh6I4HhBx',
+                    self.lump_layout.LEAF,
                     leaf.contents.value, leaf.cluster_id, leaf.area,
                     int(leaf.mins.x), int(leaf.mins.y), int(leaf.mins.z),
                     int(leaf.maxes.x), int(leaf.maxes.y), int(leaf.maxes.z),
