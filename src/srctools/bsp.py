@@ -248,6 +248,14 @@ class LUMP_DATA_LAYOUT:
         BRUSHSIDE = '<IIhBB'
         NODE = '<iii6iHHh2x'
     
+    class INFRA(STANDARD):
+        # INFRA seems to have a different lump. It's 16 bytes, it seems to be:
+        # char type;
+        # int first_ind, ind_count;
+        # short vert_ind, vert_count;
+        # Then the type is promoted to int for structure alignment.
+        PRIMITIVE = '<IIIHH'
+    
     # https://chaosinitiative.github.io/Wiki/docs/Reference/bsp-v25/
     class CHAOS(STANDARD):
         FACE = '<I??xx5i4sif5i3I'
@@ -1293,6 +1301,8 @@ class BSP:
             elif self.version is VERSIONS.VITAMINSOURCE:
                 # Change the expected structure for lumps to fit vitamin's rad new format
                 self.lump_layout = LUMP_DATA_LAYOUT.VITAMIN
+            elif self.version is VERSIONS.INFRA:
+                self.lump_layout = LUMP_DATA_LAYOUT.INFRA
             elif self.version <= 19:
                 self.lump_layout = LUMP_DATA_LAYOUT.V19
         
@@ -1757,17 +1767,12 @@ class BSP:
 
         verts = list(map(Vec, struct.iter_unpack('<fff', self.lumps[BSP_LUMPS.PRIMVERTS].data)))
         indices = read_array(self.lump_layout.PRIMINDEX, self.lumps[BSP_LUMPS.PRIMINDICES].data)
-        # INFRA seems to have a different lump. It's 16 bytes, it seems to be:
-        # char type;
-        # int first_ind, ind_count;
-        # short vert_ind, vert_count;
-        # Then the type is promoted to int for structure alignment.
-        fmt = '<IIIHH' if self.version is VERSIONS.INFRA else self.lump_layout.PRIMITIVE
+        
         for (
             prim_type,
             first_ind, ind_count,
             first_vert, vert_count,
-        ) in struct.iter_unpack(fmt, data):
+        ) in struct.iter_unpack(self.lump_layout.PRIMITIVE, data):
             yield Primitive(
                 prim_type,
                 indices[first_ind: first_ind + ind_count],
